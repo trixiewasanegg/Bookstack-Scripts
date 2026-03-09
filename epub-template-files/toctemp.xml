@@ -1,0 +1,5 @@
+<navPoint id="[[SLUG]]" playOrder="[[N]]">
+<navLabel><text>[[TITLE]]</text></navLabel>
+<content src="[[SLUG]].xhtml"/>
+[[SUBPOINT]]
+</navPoint>

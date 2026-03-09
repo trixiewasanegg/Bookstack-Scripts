@@ -67,19 +67,19 @@ if lastUpdated > lastRan:
 
     htmlOutput = []
     for shelf in shelfList:
-        head = f'<h3><a href="/shelves/{shelf[2]}">{shelf[0]}</a></h3>'
+        head = f'<h3 class="shelf"><a href="/shelves/{shelf[2]}">{shelf[0]}</a></h3>'
         htmlOutput.append(head)
         desc = f'<p><i>{shelf[3]}</i></p>'
         htmlOutput.append(desc)
 
         for books in shelfToBooks[shelf[1]]:
-            htmlOutput.append(f'<h5><a href="/books/{books[2]}">{books[0]}</a></h5>')
+            htmlOutput.append(f'<h5 class="book"><a href="/books/{books[2]}">{books[0]}</a></h5>')
             htmlOutput.append("<ul>")
             for contents in booksToContents[books[1]]:
                 if contents[1] == 'chapter':
-                    htmlOutput.append(f"<li><b><u><a href={contents[2]}>{contents[0]}</b></u></li>")
+                    htmlOutput.append(f'<li class="chapter"><b><u><a href={contents[2]}>{contents[0]}</b></u></li>')
                 else:
-                    htmlOutput.append(f"<li><a href={contents[2]}>{contents[0]}</li>")
+                    htmlOutput.append(f'<li class="page"><a href={contents[2]}>{contents[0]}</li>')
             htmlOutput.append("</ul>")
 
     output = "\n".join(htmlOutput)

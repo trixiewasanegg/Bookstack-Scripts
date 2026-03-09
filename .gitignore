@@ -210,4 +210,6 @@ __marimo__/
 # custom
 *.epub
 pageList
-*.xhtml
+./*.xhtml
+book/
+sampleformat/
