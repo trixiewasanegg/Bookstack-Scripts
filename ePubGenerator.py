@@ -3,7 +3,9 @@ from dotenv import dotenv_values
 from datetime import datetime
 import re
 import shutil
+from zipfile import ZipFile as zip
 from pathlib import Path as path
+import os
 
 ###########################################
 # THIS IS NOT YET WORKING
@@ -15,7 +17,7 @@ authHead = {'Authorization': f"Token {conf['TOKEN_ID']}:{conf['TOKEN_SECRET']}"}
 endpoint = conf['ENDPOINT']
 site = conf['SITEURL']
 now = datetime.now()
-bookUID = site[8:]+datetime.strftime(now,"%Y%m%d%H%M%S")
+bookUID = "epub-"+datetime.strftime(now,"%Y%m%d%H%M%S")
 dir = conf['OUTPUTDIR']
 siteName = str(conf['SITENAME'])
 creator = conf['CREATOR']
@@ -63,6 +65,7 @@ def getBookstack(query,fullurl=False):
     call = requests.get(callURL, headers=authHead)
     if call.status_code != 200:
         print(f'Request {query} failed, result code {call.status_code}')
+        return call
     else:
         print(f'Request {query} succeeded')
         return call
@@ -81,21 +84,28 @@ def getimg(url,folder):
     return(f"images/{filename}")
 
 # Pulls page details
-def pullPage(pageID):
+def pullPage(pageID,allSlugs=[]):
     #Gets page contents
     pageContents = str(getBookstack(f'pages/{pageID}').json()['html'])
 
     # Replaces links with relative
-    absLinks = re.findall(f'<a href="{siteURLRegex}\/[0-9a-z\-\/]+">',pageContents,re.IGNORECASE)
-    relLinks = re.findall(f'<a href="\/[0-9a-z\-\/]+">',pageContents,re.IGNORECASE)
+    absLinks = re.findall(f'(<a href="({siteURLRegex}\/[0-9a-z\-\/]+)">(.+?)<\/a>)',pageContents,re.IGNORECASE)
+    relLinks = re.findall(f'(<a href="(\/[0-9a-z\-\/]+)">(.+?)<\/a>)',pageContents,re.IGNORECASE)
     links = absLinks + relLinks
 
     if links:
         for link in links:
-            slugCode = slugToPageCode(link.split("/")[-1][0:-2])
-            
-            relLink = f'<a href="{slugCode}.xhtml">'
-            pageContents = pageContents.replace(link,relLink)
+            wholeBlock = link[0]
+            href = link[1]
+            contents = link[2]
+
+            slugCode = slugToPageCode(href.split("/")[-1][0:-2])
+            # Checks if link to internal page will be broken
+            if slugCode in allSlugs:
+                relLink = f'<a href="{slugCode}.xhtml">{contents}</a>'
+            else:
+                relLink = contents
+            pageContents = pageContents.replace(wholeBlock,relLink)
 
     # Downloads images and updates references
     imageRegex = '(<img.*? src="(.+?)".*?>)'
@@ -107,7 +117,10 @@ def pullPage(pageID):
     if images:
         for img in images:
             ref = getimg(img[1],contentDir)
-            tag = str(img[0]).replace(img[1],ref)[0:-1]+" />"
+            tag = str(img[0])[0:-1]
+            if "alt" not in tag:
+                tag = tag + " alt=\"\""
+            tag = "<div class=\"image\">"+str(tag).replace(img[1],ref)+"></img></div>"
             pageContents = pageContents.replace(img[0],tag)
 
     drawIORegex = '(<div.*drawio-diagram=".+?".*?>([\\s\\S]*?)<\/div>)'
@@ -143,7 +156,22 @@ def pullPage(pageID):
             pageContents = pageContents.replace(section, markup)
 
     # Special action for breaks
-    pageContents = pageContents.replace("<br>","&#xA;")
+    pageContents = re.sub("<br.*?>","&#xA;",pageContents)
+
+    # Special action for incomplete tags
+    incomplete = ["hr","col"]
+    regex = '(<([[TAG]])((?: [a-z]+=\".+?\")+)>)'
+    incompleteList = []
+    for check in incomplete:
+        incompleteList = incompleteList + re.findall(regex.replace("[[TAG]]",check),pageContents,re.IGNORECASE)
+
+    if len(incompleteList) > 0:
+        for result in incompleteList:
+            fullTag = result[0]
+            tagType = result[1]
+            tagMeta = result[2]
+
+            pageContents = pageContents.replace(fullTag,f"<{tagType}{tagMeta}></{tagType}>")
 
     # Substitutes non-supported tags
     tagregex = '((?:<[\/]*([a-z0-9]+)((?:[^>]+?)*)>)+?)'
@@ -154,31 +182,48 @@ def pullPage(pageID):
         if not tag[1] in supportedTags:
             new = str(tag[0]).replace(tag[1],"span",1)
             pageContents = pageContents.replace(tag[0],new,1)
+    
+    # Updates id to be XML compliant (removing all %XX type codes)
+    ## Finds all IDs
+    idregex = 'id=".+?"'
+    idText = re.findall(idregex,pageContents)
+    
+    for text in idText:
+        ## Checks ID for invalid sections
+        invalidregex = '(?:%[A-Z0-9]{2})+'
+        invalid = re.findall(invalidregex,text)
+
+        ##Replaces
+        newID = text
+        for replace in invalid:
+            newID = newID.replace(replace,"")
+        pageContents = pageContents.replace(text,newID)
 
     return pageContents
 
 # Writes page
 def writePage(pageCode,pageName,pageContents):
+    pageName = str(pageName).replace("&","&amp;")
     xhtml = pageTemplate.replace("[[TITLE]]",pageName).replace("[[BODY]]",pageContents)
     with open(path(f"{contentDir}/{pageCode}.xhtml"),'w',encoding="utf-8") as file:
         file.write(xhtml)
     return True
 
-tocList = []
+
+# Generates TOC pages (i.e: shelf/book/chapter contents) and TOC NCX file
+tocNCXList = []
 allSlugs = []
-navPointCount = 0
 pageMeta = []
-miscNav = {}
+tocEmbedList = {}
 
+# Gets list of shelves and orders accordingly
 shelfQuery = getBookstack('shelves').json()['data']
-
 fullShelves = {}
-
 for shelf in shelfQuery:
     fullShelves[slugToPageCode(shelf['slug'])] = shelf
-
 fullShelves = dict(sorted(fullShelves.items()))
 
+# Loops through shelves, queries metadata, generates TOC pages
 for shelfDict in fullShelves:
     shelf = fullShelves[shelfDict]
     shelfSlug = slugToPageCode(shelf['slug'],'shelf')
@@ -202,64 +247,78 @@ for shelfDict in fullShelves:
                     pageSlug = slugToPageCode(page['slug'],'page')
                     allSlugs.append(pageSlug)
 
-                    pages.append((pageSlug,page['name'],page['id'],False))
-                    pageMeta.append((pageSlug,page['name'],page['id']))
-                contentList.append((itemSlug,item['name'],item['id'],pages))
-                miscNav[itemSlug] = (item['name'],getBookstack(f'chapters/{item["id"]}').json()['description_html'],pages)
+                    pages.append((pageSlug,page['name'],page['id'],False,"page"))
+                    pageMeta.append((pageSlug,page['name'],page['id'],"page"))
+                contentList.append((itemSlug,item['name'],item['id'],pages,"chapter"))
+                tocEmbedList[itemSlug] = (item['name'],getBookstack(f'chapters/{item["id"]}').json()['description_html'],pages,"chapter")
             else:
-                contentList.append((itemSlug,item['name'],item['id'],False))
-                pageMeta.append((itemSlug,item['name'],item['id']))
+                contentList.append((itemSlug,item['name'],item['id'],False,"page"))
+                pageMeta.append((itemSlug,item['name'],item['id'],"page"))
         
-        bookList.append((bookSlug,book['name'],book['id'],contentList))
-        miscNav[bookSlug] = (bookMeta['name'],bookMeta['description_html'],contentList)
+        bookList.append((bookSlug,book['name'],book['id'],contentList,"book"))
+        tocEmbedList[bookSlug] = (bookMeta['name'],bookMeta['description_html'],contentList,"book")
     
-    tocList.append((shelfSlug,shelf['name'],shelf['id'],bookList))
-    miscNav[shelfSlug] = (shelf['name'],shelf['description'],bookList)
+    tocNCXList.append((shelfSlug,shelf['name'],shelf['id'],bookList,"shelf"))
+    tocEmbedList[shelfSlug] = (shelf['name'],shelf['description'],bookList,"shelf")
 
-tocList.sort()
+# Sorts TOC NCX list
+tocNCXList.sort()
 
+
+# Pulls and writes contents
 for page in pageMeta:
-    writePage(page[0],page[1],pullPage(page[2]))
+    writePage(page[0],page[1],pullPage(page[2],allSlugs))
 
 navPointCount = 0
 
-def genNavPoint(slug,title,list,template,navPoint=False):
+# Generates nav points / TOC pages
+def genNavPoint(slug,title,list,template,navPoint=False,level=""):
+    # Generates ToC by recursing through nested lists of shelves, books, chapters, and apges
+    # e.g: a shelf would be called with a list like so:
+    # [(book1 meta, [(book1.chapter1 meta,pages),(book1.chapter2 meta,pages)]),(book2 meta,[pages])]
     global navPointCount
     if navPoint:
         navPointCount = navPointCount + 1
         nav = template.replace("[[SLUG]]",slug).replace("[[TITLE]]",title).replace("[[N]]",str(navPointCount))
     else:
-        nav = template.replace("[[SLUG]]",slug).replace("[[TITLE]]",title)
+        nav = template.replace("[[SLUG]]",slug).replace("[[TITLE]]",title).replace("[[LEVEL]]",level)
     
     if list:
         sp=[]
         for item in list:
-            sp.append(genNavPoint(item[0],item[1],item[3],template,navPoint))
+            try:
+                sp.append(genNavPoint(item[0],item[1],item[3],template,navPoint,item[4]))
+            except:
+                sp.append(genNavPoint(item[0],item[1],item[3],template,navPoint))
         subPoint = "\n".join(sp)
     else:
         subPoint = ""
     nav = nav.replace("[[SUBPOINT]]",subPoint)
     return nav
 
+# Loads ToC template file
 with open(path(templateFileDirectory+"/pageTOCTemp.xhtml"),'r') as tempFile:
     pageToC = str(tempFile.read())
 
-
-for page in miscNav:
+# Generates XML files for shelves, books, and chapters
+for page in tocEmbedList:
     slug = page
-    name = miscNav[page][0]
-    desc = miscNav[page][1]
-    contList = miscNav[page][2]
-    navList = genNavPoint(slug,name,contList,pageToC,False)
-    pageContents = "<ul>\n"+navList.replace("<ul>\n\n</ul>","").replace("&","&amp;")+"\n</ul>"
+    name = tocEmbedList[page][0]
+    desc = tocEmbedList[page][1]
+    contList = tocEmbedList[page][2]
+    level = tocEmbedList[page][3]
+    navList = genNavPoint(slug,name,contList,pageToC,False,level)
+    pageContents = "<ul>\n"+navList.replace("&","&amp;")+"\n</ul>"
     writePage(slug,name,pageContents)
 
+# Loads NCX ToC template file
 with open(path(templateFileDirectory+"/toctemp.xml"),'r') as toc:
     navPoint = str(toc.read())
 
 navPointList = []
 
-for shelf in tocList:
+# Generates toc.ncx contents
+for shelf in tocNCXList:
     navPointList.append(genNavPoint(shelf[0],shelf[1],shelf[3],navPoint,True))
 
 navPoints = "\n".join(navPointList)
@@ -272,6 +331,7 @@ tocNCX = tocNCX.replace("[[navPoints]]",navPoints).replace("[[TITLE]]",siteName)
 with open(path(contentDir+"/toc.ncx"),'w',encoding='UTF-8') as toc:
     toc.write(tocNCX)
 
+# Generates image and page references for the content.opf manifest
 imageTemplate = '  <item id="[[FILENAME]]" href="images/[[FILENAME]]" media-type="image/[[FILETYPE]]"/>'
 pageTemplate = '  <item id="[[SLUG]]" href="[[SLUG]].xhtml" media-type="application/xhtml+xml"/>'
 spineTemplate = '  <itemref idref="[[SLUG]]"/>'
@@ -295,5 +355,19 @@ with open(path(templateFileDirectory+"/contentTemp.opf"),'r') as tempFile:
 with open(path(contentDir+"/content.opf"),'w',encoding='UTF-8') as output:
     output.write(content)
 
-shutil.make_archive("book",'zip',dir)
-shutil.move("book.zip","book.epub")
+# Generates the .zip archive and writes mimetype as first file
+with zip("book.zip",'w') as book:
+    book.writestr("mimetype","application/epub+zip")
+    book.close()
+
+# walks the content directory, adds each file to the archive
+with zip("book.zip",'a') as book:
+    for root, dirs, files in os.walk(path(dir+"/")):
+        for file in files:
+            filePath = f"{root}\{file}"
+            archivePath = path("/".join(filePath.split("\\")[1:]))
+            book.write(filePath,archivePath)
+    book.close()
+
+#Moves to .epub file
+os.replace("book.zip","book.epub")

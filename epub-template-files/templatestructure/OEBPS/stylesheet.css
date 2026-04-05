@@ -13,7 +13,7 @@ p {text-indent: .3in;
     margin-top:0;
     margin-bottom:0;
     text-align: justify;
-    font-family: "Times New Roman"};
+    font-family: "Times New Roman"}
 
 /* Here we make our headings centered
    We've also made the headings the same font as the body text */
@@ -45,3 +45,15 @@ h3 { text-align: center;
 
 .poem { margin-left: 3em;
       margin-right: 3em; }
+
+li.page {
+    margin-left: 9em;
+}
+
+li.chapter {
+    margin-left: 6em;
+}
+
+li.book {
+    margin-left: 3em;
+}

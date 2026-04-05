@@ -6,7 +6,7 @@
    <dc:title>[[TITLE]]</dc:title> 
    <dc:creator>[[CREATOR]]</dc:creator>
    <dc:language>[[LANG]]</dc:language> 
-   <dc:identifier id="bookid">[[BOOKUID]]</dc:identifier>
+   <dc:identifier id="[[BOOKUID]]">[[BOOKUID]]</dc:identifier>
  </metadata>
  <manifest>
   <item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/>

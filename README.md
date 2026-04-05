@@ -3,7 +3,7 @@ Misc bookstack scripts
 
 
 # Dependencies
-- Requests
+- [Requests](https://pypi.org/project/requests/)
 - [Python dotenv](https://pypi.org/project/python-dotenv/)
 
 # Dotenv config
