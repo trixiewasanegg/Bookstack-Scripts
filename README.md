@@ -1,6 +1,7 @@
 # Bookstack-Scripts
 Misc bookstack scripts
 
+SiteMapGenerator.py can be run with -f to force it to run rather than checking if updates are needed
 
 # Dependencies
 - [Requests](https://pypi.org/project/requests/)

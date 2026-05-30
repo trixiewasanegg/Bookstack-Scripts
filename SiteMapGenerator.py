@@ -1,14 +1,28 @@
 import requests
 from dotenv import dotenv_values
 from datetime import datetime
+import argparse
+import time
+
+parser = argparse.ArgumentParser()
+parser.add_argument("-f","--force",action='store_true',help="Forces an update")
+args = parser.parse_args()
 
 conf = dotenv_values(".env")
 authHead = {'Authorization': f"Token {conf['TOKEN_ID']}:{conf['TOKEN_SECRET']}"}
 outputPageID = int(conf['SITEMAP_ID'])
 
 endpoint = conf['ENDPOINT']
+lastRequest = datetime.now()
 
 def getBookstack(query):
+    # Rate limiting to 180 requests / min
+    global lastRequest
+    now = datetime.now()
+    if ((now-lastRequest).seconds) < (1/3):
+        time.sleep(0.5)
+    
+
     call = requests.get(f'{endpoint}/{query}', headers=authHead)
     if call.status_code != 200:
         print(f'Request {query} failed, result code {call.status_code}')
@@ -16,25 +30,41 @@ def getBookstack(query):
         print(f'Request {query} succeeded')
         return call.json()
 
-fullPages = getBookstack('pages')['data']
+# Standard function to get full list of things from bookstack
+# Gets list, offsets query if response is less than total pages
+def getFullList(queryType,responseAtt="data"):
+    query = getBookstack(queryType)
+    workingData = query[responseAtt]
+    saved = len(workingData)
+    count = query['total']
+
+    while saved<count:
+        offsetQuery = getBookstack(f'{queryType}?offset={saved}')[responseAtt]
+        workingData = workingData + offsetQuery
+        saved = len(workingData)
+
+    return workingData
+
+fullPages = getFullList('pages')
 
 outputPageMeta = getBookstack(f'pages/{outputPageID}')
 
 lastRan = datetime.fromisoformat(outputPageMeta['updated_at'].strip('Z'))
 lastUpdated = datetime.fromisoformat("2000-01-01T00:00:00")
 
-for page in fullPages:
-    if page['id'] != outputPageID:
-        updated = datetime.fromisoformat(page['updated_at'].strip('Z'))
-        if updated > lastUpdated:
-            lastUpdated = updated
+if not args.force:
+    for page in fullPages:
+        if page['id'] != outputPageID:
+            updated = datetime.fromisoformat(page['updated_at'].strip('Z'))
+            if updated > lastUpdated:
+                lastUpdated = updated
 
-if lastUpdated > lastRan:
+if lastUpdated > lastRan or args.force:
     print("Updating...")
 
     shelfList = []
 
-    fullShelves = getBookstack('shelves')['data']
+    fullShelves = getFullList('shelves')
     for shelf in fullShelves:
         shelfList.append((shelf['name'],shelf['id'],shelf['slug'],shelf['description']))
         
