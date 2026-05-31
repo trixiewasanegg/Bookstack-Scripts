@@ -1,5 +1,4 @@
 import requests
-from dotenv import dotenv_values
 from datetime import datetime
 import re
 import shutil
@@ -12,7 +11,22 @@ import os
 ###########################################
 
 # Environment variables
-conf = dotenv_values(".env")
+def readEnv(file):
+    with open(file,'r') as envFile:
+        envDict = {}
+        for line in envFile.readlines():
+            try:
+                line = line.replace("\n","")
+                key = line.split("=")[0]
+                value = line.split("=")[1]
+                envDict[key] = value
+            except:
+                print(f"envReader exception - {line} in {file} is not key/value pair separated by =")
+        envFile.close()
+    
+    return envDict
+
+conf = readEnv(".env")
 authHead = {'Authorization': f"Token {conf['TOKEN_ID']}:{conf['TOKEN_SECRET']}"}
 endpoint = conf['ENDPOINT']
 site = conf['SITEURL']

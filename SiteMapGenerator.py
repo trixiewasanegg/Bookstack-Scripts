@@ -14,7 +14,23 @@ parser.add_argument("-f","--force",action='store_true',help="Forces an update")
 args = parser.parse_args()
 
 # Load .env values into conf dict
-conf = dotenv_values(".env")
+# Environment variables
+def readEnv(file):
+    with open(file,'r') as envFile:
+        envDict = {}
+        for line in envFile.readlines():
+            try:
+                line = line.replace("\n","")
+                key = line.split("=")[0]
+                value = line.split("=")[1]
+                envDict[key] = value
+            except:
+                print(f"envReader exception - {line} in {file} is not key/value pair separated by =")
+        envFile.close()
+    
+    return envDict
+
+conf = readEnv(".env")
 authHead = {'Authorization': f"Token {conf['TOKEN_ID']}:{conf['TOKEN_SECRET']}"}
 outputPageID = int(conf['SITEMAP_ID'])
 endpoint = conf['ENDPOINT']

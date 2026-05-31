@@ -5,7 +5,6 @@ SiteMapGenerator.py can be run with -f to force it to run rather than checking i
 
 # Dependencies
 - [Requests](https://pypi.org/project/requests/)
-- [Python dotenv](https://pypi.org/project/python-dotenv/)
 
 # Dotenv config
 ```
@@ -15,6 +14,9 @@ ENDPOINT=[URL for the API endpoint (usually https://domain/api)]
 SITEMAP_ID=[Page ID for the SiteMap]
 SITEURL=[URL for the site(https://domain)]
 OUTPUTDIR=[Temp for outputting directory]
+SITENAME=[Name of the site]
+CREATOR=[Author for the ePub]
+LANGUAGE=[Language for the ePub]
 ```
 
 
